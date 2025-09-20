@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+google-adk
+google-generativeai
+google-cloud-aiplatform
+google-cloud-storage
+vertexai
+pydantic
+numpy
+python-multipart
+PyPDF2
+google-api-python-client
+python-docx
+python-dotenv
+
