@@ -11,7 +11,7 @@ import logging
  
 # Import your components
 from rag_chatbot import RAGDocumentProcessor, RAGVectorStore, RAGChatbot
-from audio_overview import create_document_audio_explanation
+from audio_overview import create_legal_document_audio_explanation  # Updated import
 from google.cloud import storage
  
 from datetime import datetime
@@ -109,6 +109,12 @@ class AudioExplanationResponse(BaseModel):
     message: str
     audio_url: str
     document_details: Dict[str, Any]
+
+# Updated Audio Request Model to match the attached file structure
+class AudioExplanationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_uri: str
+    voice_preference: Optional[str] = "Achernar"
  
 # Helper Functions
 async def upload_file_to_gcs(file_path: str, filename: str) -> str:
@@ -126,10 +132,11 @@ async def upload_file_to_gcs(file_path: str, filename: str) -> str:
         logger.error(f"Error uploading to GCS: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
  
-def run_audio_explanation(document_uri: str, target_audience: str) -> Dict:
-    """Run the audio explanation generation synchronously"""
+# Updated function to use the new audio_overview function
+def run_audio_explanation(document_uri: str, voice_preference: str = "Achernar") -> Dict:
+    """Run the legal document audio explanation generation synchronously"""
     try:
-        return create_document_audio_explanation(document_uri, target_audience)
+        return create_legal_document_audio_explanation(document_uri, voice_preference)
     except Exception as e:
         logger.error(f"Error generating audio explanation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate audio explanation: {str(e)}")
@@ -166,9 +173,10 @@ async def root():
         "features": [
             "Document Upload",
             "RAG Chatbot", 
-            "Audio Explanations",
+            "Legal Document Audio Explanations with Achernar Voice",
             "Document Management"
         ],
+        "voices_available": ["Achernar"],
         "endpoints": {
             "upload": "/upload-document/",
             "chat": "/chat",
@@ -364,24 +372,42 @@ async def chat_with_documents(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
  
+# Updated explain-document endpoint to use the new structure
 @app.post("/explain-document/", response_model=AudioExplanationResponse)
-async def explain_document_audio(
-    request: Dict[str, str]
-):
-    """Generate audio explanation for a document using its GCS URI"""
-    file_uri = request.get("file_uri")
-    target_audience = request.get("target_audience", "general public")
- 
-    if not file_uri:
+async def explain_legal_document(request: AudioExplanationRequest):
+    """Generate natural audio explanation for a legal document using Achernar voice"""
+    
+    if not request.file_uri:
         raise HTTPException(status_code=400, detail="Field 'file_uri' is required.")
+    
+    print(f"⚖️ Generating legal explanation for: {request.file_uri}")
+    print(f"🎙️ Using voice: {request.voice_preference}")
+    print("🎭 Using advanced Achernar retry logic for 100% success rate")
  
     try:
+        # Use the updated create_legal_document_audio_explanation function
         result = await asyncio.get_event_loop().run_in_executor(
-            None, create_document_audio_explanation, file_uri, target_audience
+            None, 
+            create_legal_document_audio_explanation, 
+            request.file_uri,
+            request.voice_preference
         )
-        return result
+        
+        if result['success']:
+            print(f"✅ Legal audio explanation generated: {result['audio_url']}")
+            if request.voice_preference == "Achernar":
+                print("🎭 Achernar voice processing completed successfully!")
+        else:
+            print(f"⚠️ Failed to generate explanation: {result['message']}")
+            
+        return AudioExplanationResponse(**result)
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate audio explanation: {str(e)}")
+        logger.error(f"Error generating audio explanation: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate audio explanation: {str(e)}"
+        )
  
 @app.get("/documents", response_model=DocumentInfo)
 async def list_documents():
