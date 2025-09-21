@@ -9,6 +9,8 @@ from typing import Dict, List, Any, Optional
 import asyncio
 import logging
  
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = './legal-tts-key.json'
+
 # Import your components
 from rag_chatbot import RAGDocumentProcessor, RAGVectorStore, RAGChatbot
 from audio_overview import create_legal_document_audio_explanation  # Updated import

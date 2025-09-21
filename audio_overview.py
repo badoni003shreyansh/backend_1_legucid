@@ -10,14 +10,47 @@ from vertexai.generative_models import GenerativeModel, Part
 from google.cloud import storage
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
-
-
+from google.auth import default
 
 PROJECT_ID = "my-project-29-388706"
 LOCATION = "us-central1"
 PODCAST_BUCKET = "my-project-29-388706-podcasts"
 
-
+def get_access_token():
+    """Production-ready authentication with explicit quota project"""
+    import os
+    from google.auth import default
+    from google.auth.transport.requests import Request
+    
+    try:
+        # Set quota project via environment variable
+        os.environ['GOOGLE_CLOUD_QUOTA_PROJECT_ID'] = 'my-project-29-388706'
+        
+        print("🔐 Using Application Default Credentials with quota project...")
+        credentials, _ = default(
+            scopes=['https://www.googleapis.com/auth/cloud-platform'],
+            quota_project_id='my-project-29-388706'
+        )
+        credentials.refresh(Request())
+        print("✅ Production authentication successful with quota project")
+        return credentials.token
+    except Exception as e:
+        print(f"⚠️ ADC failed: {e}")
+        
+        # Development fallback: gcloud command (only works locally)
+        if os.getenv('K_SERVICE') is None:  # Not in Cloud Run
+            try:
+                import subprocess
+                print("🔐 Development fallback: gcloud CLI...")
+                result = subprocess.run(['gcloud', 'auth', 'print-access-token'], 
+                                       capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    print("✅ gcloud authentication successful")
+                    return result.stdout.strip()
+            except Exception as fallback_error:
+                print(f"⚠️ gcloud fallback failed: {fallback_error}")
+        
+        raise Exception(f"All authentication methods failed: {e}")
 
 def split_text_into_chunks(text: str, max_chars: int = 4500) -> List[str]:
     """Split long text into chunks that fit within TTS limits"""
@@ -48,8 +81,6 @@ def split_text_into_chunks(text: str, max_chars: int = 4500) -> List[str]:
         chunks.append(current_chunk.strip())
     
     return chunks
-
-
 
 def clean_text_for_tts(text: str) -> str:
     """Clean text to remove markdown and formatting that sounds bad in TTS"""
@@ -84,8 +115,6 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r'\n\s*([a-z])', lambda m: '\n' + m.group(1).upper(), text)
     
     return text.strip()
-
-
 
 def analyze_legal_risks(document: Part) -> Dict[str, any]:
     """Analyze document for legal risks and red flags"""
@@ -167,8 +196,6 @@ def analyze_legal_risks(document: Part) -> Dict[str, any]:
         print(f"⚠️ Risk analysis error: {e}")
         return {}
 
-
-
 def generate_legal_explanation_script(document: Part, risk_analysis: Dict) -> str:
     """Generate natural, conversational explanation of legal document with risk insights"""
     
@@ -181,7 +208,6 @@ def generate_legal_explanation_script(document: Part, risk_analysis: Dict) -> st
     prompt = f"""You are a friendly legal advisor explaining a document to someone who has no legal background.
 Create a NATURAL, CONVERSATIONAL audio script that sounds like you're having a coffee chat with a friend.
 
-
 IMPORTANT: This script will be converted to AUDIO, so:
 - NO markdown formatting (no **, ##, bullets, etc.)
 - NO special characters or symbols
@@ -189,51 +215,40 @@ IMPORTANT: This script will be converted to AUDIO, so:
 - Use ONLY plain text that sounds natural when spoken
 - Write everything as flowing conversational paragraphs
 
-
 Risk Analysis Results:
 {risk_summary}
 
-
 Create a script that:
-
 
 1. **Opens warmly and naturally**: Start with something like "Alright, so I've gone through your document, and let me break down what you really need to know..."
 
-
 2. **Explains the document type**: What kind of agreement is this? Use everyday language.
 
-
 3. **Highlights the MOST IMPORTANT things first**: What are the 2-3 things they absolutely must understand?
-
 
 4. **Explains red flags conversationally**: 
    - Use phrases like "Here's something that caught my eye..." or "You'll want to pay attention to this part..."
    - Explain WHY each red flag matters in practical terms
    - Give real-world examples when possible
 
-
 5. **Discusses money matters clearly**: 
    - "Let's talk about what this will cost you..."
    - Break down all fees, penalties, and financial commitments
    - Explain payment terms in simple language
-
 
 6. **Explains the "what ifs"**: 
    - What happens if they want to cancel?
    - What if there's a dispute?
    - What if they don't meet their obligations?
 
-
 7. **Provides actionable advice**:
    - "If I were you, I'd consider..."
    - "You might want to negotiate..."
    - "Make sure you understand..."
 
-
 8. **Closes with key takeaways**: 
    - "So, bottom line..."
    - "The three things to remember are..."
-
 
 Guidelines for natural speech:
 - Use contractions (you'll, doesn't, here's, that's)
@@ -244,7 +259,6 @@ Guidelines for natural speech:
 - Include slight redundancy that occurs in natural speech
 - Add emphasis naturally ("This is really important...", "Pay special attention to...")
 
-
 CRITICAL FORMATTING RULES:
 - Write in flowing paragraphs only
 - No bullet points, numbered lists, or special formatting
@@ -253,12 +267,9 @@ CRITICAL FORMATTING RULES:
 - Use "first", "second", "third" instead of numbered lists
 - Use "also" and "another thing" to transition between points
 
-
 Length: 4-6 minutes of natural conversation (600-800 words)
 
-
 Remember: Make it sound like a knowledgeable friend explaining things over coffee, not a robot reading a legal brief. Be warm, helpful, and genuinely concerned about helping them understand what they're signing.
-
 
 Return ONLY the conversational script with no formatting whatsoever."""
     
@@ -280,23 +291,14 @@ Return ONLY the conversational script with no formatting whatsoever."""
         print(f"⚠️ Script generation error: {e}")
         return ""
 
-
-
 def generate_audio_with_gemini_tts(text: str, voice_name: str = "Achernar") -> str:
     """Generate audio using Google Cloud TTS with Gemini 2.5 Flash Preview"""
     try:
         print("🔐 Using Google Cloud TTS API...")
         
-        # Get fresh access token using gcloud command
-        import subprocess
-        result = subprocess.run(['gcloud', 'auth', 'print-access-token'], 
-                               capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            raise Exception(f"Failed to get access token: {result.stderr}")
-            
-        access_token = result.stdout.strip()
-        print(f"✅ Got fresh access token: {access_token[:50]}...")
+        # Get access token using production-ready authentication
+        access_token = get_access_token()
+        print(f"✅ Got access token: {access_token[:50]}...")
         
         # Split text into chunks
         text_chunks = split_text_into_chunks(text, max_chars=800)
@@ -342,7 +344,7 @@ def generate_audio_with_gemini_tts(text: str, voice_name: str = "Achernar") -> s
                         "Content-Type": "application/json"
                     }
                     
-                    response = requests.post(url, headers=headers, json=request_body)
+                    response = requests.post(url, headers=headers, json=request_body, timeout=60)
                     
                     if response.status_code == 200:
                         audio_data = response.json()
@@ -395,7 +397,7 @@ def generate_audio_with_gemini_tts(text: str, voice_name: str = "Achernar") -> s
                     "Content-Type": "application/json"
                 }
                 
-                response = requests.post(url, headers=headers, json=request_body)
+                response = requests.post(url, headers=headers, json=request_body, timeout=60)
                 
                 if response.status_code == 200:
                     audio_data = response.json()
@@ -422,8 +424,6 @@ def generate_audio_with_gemini_tts(text: str, voice_name: str = "Achernar") -> s
         traceback.print_exc()
         return ""
 
-
-
 def upload_audio_to_gcs(audio_content: str, filename: str) -> str:
     """Upload audio file to Google Cloud Storage"""
     try:
@@ -438,8 +438,6 @@ def upload_audio_to_gcs(audio_content: str, filename: str) -> str:
     except Exception as e:
         print(f"⚠️ Upload error: {e}")
         return ""
-
-
 
 def create_legal_document_audio_explanation(document_uri: str, voice_preference: str = "Achernar") -> Dict:
     """Generate comprehensive legal document explanation in natural audio format"""
@@ -587,8 +585,6 @@ def create_legal_document_audio_explanation(document_uri: str, voice_preference:
             "audio_url": "",
             "document_details": {}
         }
-
-
 
 if __name__ == "__main__":
     print("⚖️ Legal Document Audio Demystifier Ready!")
